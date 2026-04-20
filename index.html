@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>DART · Daily Activity & Routine Tracker</title>
+<style>
+  :root {
+    --green: #1D9E75;
+    --blue: #378ADD;
+    --red: #E24B4A;
+    --amber: #EF9F27;
+    --bg: #F7F6F3;
+    --card: #FFFFFF;
+    --border: rgba(0,0,0,0.1);
+    --text: #1a1a1a;
+    --muted: #888;
+    --light: #f0efeb;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+  /* SETUP SCREEN */
+  #setup-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 2rem 1.5rem; text-align: center; }
+  #setup-screen .logo { font-size: 13px; font-weight: 600; letter-spacing: 3px; color: var(--muted); margin-bottom: 0.5rem; }
+  #setup-screen h1 { font-size: 28px; font-weight: 700; margin-bottom: 0.5rem; }
+  #setup-screen p { font-size: 14px; color: var(--muted); margin-bottom: 2rem; line-height: 1.6; }
+  .setup-card { background: var(--card); border-radius: 16px; border: 1px solid var(--border); padding: 1.5rem; width: 100%; max-width: 360px; text-align: left; margin-bottom: 1rem; }
+  .setup-card h3 { font-size: 14px; font-weight: 600; margin-bottom: 1rem; }
+  .field { margin-bottom: 1rem; }
+  .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; }
+  .field input { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border); font-size: 14px; background: var(--bg); color: var(--text); outline: none; }
+  .field input:focus { border-color: var(--green); }
+  .btn-primary { width: 100%; padding: 14px; border-radius: 12px; border: none; background: var(--text); color: #fff; font-size: 15px; font-weight: 600; cursor: pointer; transition: opacity 0.15s; }
+  .btn-primary:active { opacity: 0.8; }
+  .help-link { font-size: 13px; color: var(--blue); text-decoration: none; display: block; text-align: center; margin-top: 1rem; }
+
+  /* MAIN APP */
+  #app-screen { display: none; max-width: 420px; margin: 0 auto; padding-bottom: 2rem; }
+
+  /* HEADER */
+  .app-header { padding: 1rem 1rem 0.5rem; display: flex; align-items: center; justify-content: space-between; }
+  .app-header .brand { font-size: 11px; font-weight: 700; letter-spacing: 2.5px; color: var(--muted); }
+  .app-header .month-title { font-size: 18px; font-weight: 700; }
+  .settings-btn { width: 32px; height: 32px; border-radius: 50%; background: var(--light); border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 16px; }
+
+  /* MONTH TABS */
+  .month-tabs { display: flex; gap: 6px; padding: 0.5rem 1rem; overflow-x: auto; scrollbar-width: none; }
+  .month-tabs::-webkit-scrollbar { display: none; }
+  .mtab { flex: 0 0 auto; padding: 5px 14px; border-radius: 20px; border: 1px solid var(--border); font-size: 13px; font-weight: 500; cursor: pointer; background: var(--card); color: var(--muted); transition: all 0.15s; }
+  .mtab.active { background: var(--text); color: #fff; border-color: var(--text); }
+
+  /* SCORE STRIP */
+  .score-strip { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 0.5rem 1rem; }
+  .score-card { background: var(--card); border-radius: 12px; border: 1px solid var(--border); padding: 10px 14px; display: flex; align-items: center; gap: 10px; }
+  .score-avatar { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: #fff; flex-shrink: 0; }
+  .score-info .name { font-size: 11px; color: var(--muted); font-weight: 500; }
+  .score-info .pct { font-size: 18px; font-weight: 700; }
+
+  /* CALENDAR */
+  .cal-wrap { padding: 0.5rem 1rem; }
+  .cal-dow { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; margin-bottom: 3px; }
+  .cal-dow span { text-align: center; font-size: 10px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; padding: 2px 0; }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+  .cal-cell { aspect-ratio: 1; border-radius: 8px; border: 1px solid var(--border); background: var(--card); display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; transition: all 0.1s; position: relative; overflow: hidden; }
+  .cal-cell.empty { background: transparent; border-color: transparent; cursor: default; }
+  .cal-cell.today { border-color: var(--text); border-width: 2px; }
+  .cal-cell.selected { background: var(--light); }
+  .cal-cell.sun { background: #faf9f6; }
+  .cal-cell .cn { font-size: 12px; font-weight: 600; color: var(--text); }
+  .cal-cell .cd { font-size: 8px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.3px; }
+  .cal-cell .cpips { display: flex; gap: 2px; margin-top: 2px; }
+  .cal-cell .pip { width: 4px; height: 4px; border-radius: 50%; }
+
+  /* DAY PANEL */
+  .day-panel { padding: 0.75rem 1rem 0; }
+  .day-heading { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 8px; }
+  .col-heads { display: flex; align-items: center; padding: 0 0 4px; }
+  .col-heads .ch-name { flex: 1; font-size: 12px; color: var(--muted); margin-left: 34px; }
+  .col-heads .ch-user { width: 40px; text-align: center; font-size: 11px; font-weight: 700; }
+
+  /* ACTIVITY ROWS */
+  .act-row { display: flex; align-items: center; background: var(--card); border-radius: 12px; border: 1px solid var(--border); padding: 10px 10px; margin-bottom: 6px; gap: 8px; }
+  .act-emoji { font-size: 18px; width: 26px; text-align: center; flex-shrink: 0; }
+  .act-name { flex: 1; font-size: 14px; font-weight: 500; }
+  .act-toggle { width: 38px; height: 38px; border-radius: 50%; border: 1.5px solid var(--border); background: var(--bg); display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 16px; transition: all 0.15s; flex-shrink: 0; user-select: none; }
+  .act-toggle:active { transform: scale(0.92); }
+  .act-toggle.done-s { background: var(--green); border-color: var(--green); }
+  .act-toggle.skip-s { background: var(--red); border-color: var(--red); }
+  .act-toggle.done-r { background: var(--blue); border-color: var(--blue); }
+  .act-toggle.skip-r { background: var(--red); border-color: var(--red); }
+
+  /* WEIGHT */
+  .weight-row { background: var(--card); border-radius: 12px; border: 1px solid var(--border); padding: 12px; margin-bottom: 6px; }
+  .weight-row h4 { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
+  .weight-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .wfield label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; font-weight: 600; }
+  .wfield input { width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); font-size: 14px; background: var(--bg); color: var(--text); outline: none; }
+  .wfield input:focus { border-color: var(--green); }
+
+  /* SAVE BUTTON */
+  .save-wrap { padding: 0.75rem 1rem 0; }
+  .save-btn { width: 100%; padding: 15px; border-radius: 14px; border: none; background: var(--text); color: #fff; font-size: 15px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: opacity 0.15s; }
+  .save-btn:active { opacity: 0.8; }
+  .save-btn.saving { opacity: 0.6; }
+  .save-btn .spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: spin 0.6s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* TOAST */
+  .toast { position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%) translateY(20px); background: var(--text); color: #fff; padding: 10px 20px; border-radius: 24px; font-size: 13px; font-weight: 500; opacity: 0; transition: all 0.25s; pointer-events: none; white-space: nowrap; z-index: 999; }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .toast.error { background: var(--red); }
+
+  /* SETTINGS MODAL */
+  .modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 100; align-items: flex-end; justify-content: center; }
+  .modal-bg.open { display: flex; }
+  .modal { background: var(--card); border-radius: 20px 20px 0 0; padding: 1.5rem; width: 100%; max-width: 420px; }
+  .modal h3 { font-size: 16px; font-weight: 700; margin-bottom: 1rem; }
+  .modal .field input { background: var(--bg); }
+  .modal-btns { display: flex; gap: 8px; margin-top: 1rem; }
+  .btn-sec { flex: 1; padding: 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); font-size: 14px; font-weight: 600; cursor: pointer; }
+  .btn-danger { flex: 1; padding: 12px; border-radius: 10px; border: none; background: #fff0f0; color: var(--red); font-size: 14px; font-weight: 600; cursor: pointer; }
+
+  /* SYNC STATUS */
+  .sync-bar { display: flex; align-items: center; gap: 6px; padding: 4px 1rem 0; }
+  .sync-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
+  .sync-dot.offline { background: var(--amber); }
+  .sync-dot.syncing { background: var(--amber); animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+  .sync-text { font-size: 11px; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<!-- SETUP SCREEN -->
+<div id="setup-screen">
+  <div class="logo">DART</div>
+  <h1>Daily Activity<br>& Routine Tracker</h1>
+  <p>Track your habits together.<br>Connect your Google Sheet to get started.</p>
+
+  <div class="setup-card">
+    <h3>⚙️ Connect Google Sheet</h3>
+    <div class="field">
+      <label>Your Name</label>
+      <input type="text" id="cfg-name" placeholder="e.g. Soujanya" maxlength="20">
+    </div>
+    <div class="field">
+      <label>Cousin's Name</label>
+      <input type="text" id="cfg-cousin" placeholder="e.g. Ravi" maxlength="20">
+    </div>
+    <div class="field">
+      <label>Google Sheet ID</label>
+      <input type="text" id="cfg-sheet" placeholder="Paste your Sheet ID here">
+    </div>
+    <div class="field">
+      <label>Google Apps Script URL</label>
+      <input type="text" id="cfg-script" placeholder="Paste your Web App URL here">
+    </div>
+    <button class="btn-primary" onclick="saveConfig()">Get Started →</button>
+  </div>
+  <a class="help-link" href="github-setup.html" target="_blank">📖 How to host this free (step-by-step guide)</a>
+</div>
+
+<!-- MAIN APP -->
+<div id="app-screen">
+  <div class="app-header">
+    <div>
+      <div class="brand">DART 2026</div>
+      <div class="month-title" id="month-title">April</div>
+    </div>
+    <button class="settings-btn" onclick="openSettings()">⚙️</button>
+  </div>
+
+  <div class="sync-bar">
+    <div class="sync-dot" id="sync-dot"></div>
+    <div class="sync-text" id="sync-text">Connected</div>
+  </div>
+
+  <div class="month-tabs" id="month-tabs"></div>
+
+  <div class="score-strip">
+    <div class="score-card">
+      <div class="score-avatar" id="av1" style="background:var(--green)">S</div>
+      <div class="score-info">
+        <div class="name" id="name1">Soujanya</div>
+        <div class="pct" style="color:var(--green)" id="pct1">–</div>
+      </div>
+    </div>
+    <div class="score-card">
+      <div class="score-avatar" id="av2" style="background:var(--blue)">R</div>
+      <div class="score-info">
+        <div class="name" id="name2">Ravi</div>
+        <div class="pct" style="color:var(--blue)" id="pct2">–</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="cal-wrap">
+    <div class="cal-dow">
+      <span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span>
+    </div>
+    <div class="cal-grid" id="cal-grid"></div>
+  </div>
+
+  <div class="day-panel">
+    <div class="day-heading" id="day-heading">Today's Activities</div>
+    <div class="col-heads">
+      <div class="ch-name">Activity</div>
+      <div class="ch-user" id="ch1" style="color:var(--green)">S</div>
+      <div class="ch-user" id="ch2" style="color:var(--blue)">R</div>
+    </div>
+    <div id="act-list"></div>
+
+    <div id="weight-section" style="display:none">
+      <div class="weight-row">
+        <h4>⚖️ Weekly Weight (Sunday)</h4>
+        <div class="weight-fields">
+          <div class="wfield">
+            <label id="wlabel1">Soujanya (kg)</label>
+            <input type="number" step="0.1" id="wt1" placeholder="0.0">
+          </div>
+          <div class="wfield">
+            <label id="wlabel2">Ravi (kg)</label>
+            <input type="number" step="0.1" id="wt2" placeholder="0.0">
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="save-wrap">
+    <button class="save-btn" id="save-btn" onclick="saveDay()">
+      <span id="save-label">Save & Sync</span>
+    </button>
+  </div>
+</div>
+
+<!-- SETTINGS MODAL -->
+<div class="modal-bg" id="settings-modal">
+  <div class="modal">
+    <h3>Settings</h3>
+    <div class="field">
+      <label>Your Name</label>
+      <input type="text" id="s-name" maxlength="20">
+    </div>
+    <div class="field">
+      <label>Cousin's Name</label>
+      <input type="text" id="s-cousin" maxlength="20">
+    </div>
+    <div class="field">
+      <label>Apps Script URL</label>
+      <input type="text" id="s-script">
+    </div>
+    <div class="modal-btns">
+      <button class="btn-sec" onclick="closeSettings()">Cancel</button>
+      <button class="btn-primary" style="flex:1" onclick="updateSettings()">Save</button>
+    </div>
+    <div class="modal-btns">
+      <button class="btn-danger" onclick="resetApp()">Reset & Reconfigure</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const ACTIVITIES = [
+  {id:'shaam', emoji:'🔮', name:'Shaambhavi'},
+  {id:'med',   emoji:'🧘', name:'Meditation'},
+  {id:'walk',  emoji:'🚶', name:'Walking'},
+  {id:'exer',  emoji:'💪', name:'Exercise'},
+  {id:'diet',  emoji:'🥗', name:'Diet'},
+  {id:'prot',  emoji:'🥛', name:'Protein'},
+  {id:'supp',  emoji:'💊', name:'Supplements'},
+  {id:'read',  emoji:'📖', name:'Reading'},
+  {id:'music', emoji:'🎵', name:'Music'},
+  {id:'pmcl',  emoji:'🌙', name:'PM Cleansing'},
+  {id:'sleep', emoji:'😴', name:'Sleep'},
+];
+
+const MONTHS  = ['Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const MFULL   = ['April','May','June','July','August','September','October','November','December'];
+const MNUMS   = [4,5,6,7,8,9,10,11,12];
+const MDAYS   = [30,31,30,31,31,30,31,30,31];
+const DNAMES  = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+let cfg = {};
+let sheetData = {};    // { "4-21": { shaam_1:'done', med_2:'skip', wt1:'62' ... } }
+let curMonth = 0;
+let curDay = 1;
+let isSyncing = false;
+
+// ── CONFIG ──────────────────────────────────────────────────────────────────
+function loadConfig() {
+  const raw = localStorage.getItem('dart_cfg');
+  if (raw) {
+    cfg = JSON.parse(raw);
+    return true;
+  }
+  return false;
+}
+
+function saveConfig() {
+  const name   = document.getElementById('cfg-name').value.trim();
+  const cousin = document.getElementById('cfg-cousin').value.trim();
+  const sheet  = document.getElementById('cfg-sheet').value.trim();
+  const script = document.getElementById('cfg-script').value.trim();
+  if (!name || !cousin || !sheet || !script) {
+    showToast('Please fill in all fields', true); return;
+  }
+  cfg = { name, cousin, sheet, script };
+  localStorage.setItem('dart_cfg', JSON.stringify(cfg));
+  initApp();
+}
+
+// ── INIT ─────────────────────────────────────────────────────────────────────
+function initApp() {
+  document.getElementById('setup-screen').style.display = 'none';
+  document.getElementById('app-screen').style.display   = 'block';
+
+  const today = new Date();
+  curMonth = Math.max(0, Math.min(8, today.getMonth() - 3));
+  curDay   = today.getDate();
+
+  updateNames();
+  renderMonthTabs();
+  fetchData();
+}
+
+function updateNames() {
+  const n1 = cfg.name   || 'You';
+  const n2 = cfg.cousin || 'Cousin';
+  document.getElementById('name1').textContent  = n1;
+  document.getElementById('name2').textContent  = n2;
+  document.getElementById('av1').textContent    = n1[0].toUpperCase();
+  document.getElementById('av2').textContent    = n2[0].toUpperCase();
+  document.getElementById('ch1').textContent    = n1[0].toUpperCase();
+  document.getElementById('ch2').textContent    = n2[0].toUpperCase();
+  document.getElementById('wlabel1').textContent = n1 + ' (kg)';
+  document.getElementById('wlabel2').textContent = n2 + ' (kg)';
+}
+
+// ── GOOGLE SHEETS API ─────────────────────────────────────────────────────────
+async function fetchData() {
+  setSyncStatus('syncing', 'Syncing…');
+  try {
+    const url = `${cfg.script}?action=get&sheet=${encodeURIComponent(cfg.sheet)}&t=${Date.now()}`;
+    const res  = await fetch(url);
+    const json = await res.json();
+    if (json.data) {
+      sheetData = json.data;
+      localStorage.setItem('dart_cache', JSON.stringify(sheetData));
+    }
+    const now = new Date();
+    const hh = now.getHours().toString().padStart(2,'0');
+    const mm = now.getMinutes().toString().padStart(2,'0');
+    setSyncStatus('ok', `Last synced ${hh}:${mm}`);
+  } catch(e) {
+    const cache = localStorage.getItem('dart_cache');
+    if (cache) sheetData = JSON.parse(cache);
+    setSyncStatus('offline', 'Offline – tap to retry');
+    document.getElementById('sync-dot').onclick = fetchData;
+  }
+  render();
+}
+
+// Auto-refresh every 30 seconds to pick up cousin's updates
+setInterval(() => { if (cfg.script) fetchData(); }, 30000);
+
+async function saveDay() {
+  if (isSyncing) return;
+  isSyncing = true;
+  const btn = document.getElementById('save-btn');
+  const lbl = document.getElementById('save-label');
+  btn.classList.add('saving');
+  lbl.innerHTML = '<div class="spinner"></div>';
+
+  const key = `${MNUMS[curMonth]}-${curDay}`;
+  if (!sheetData[key]) sheetData[key] = {};
+  const dd = sheetData[key];
+
+  // collect weight if Sunday
+  const dow = new Date(2026, MNUMS[curMonth]-1, curDay).getDay();
+  if (dow === 0) {
+    dd.wt1 = document.getElementById('wt1').value || '';
+    dd.wt2 = document.getElementById('wt2').value || '';
+  }
+
+  try {
+    const res = await fetch(cfg.script, {
+      method: 'POST',
+      body: JSON.stringify({ action:'set', sheet: cfg.sheet, key, data: dd })
+    });
+    const json = await res.json();
+    if (json.ok) {
+      showToast('Saved ✓');
+      setSyncStatus('ok', 'Saved just now');
+    } else {
+      throw new Error('save failed');
+    }
+  } catch(e) {
+    showToast('Saved locally (will sync when online)', false);
+    localStorage.setItem('dart_offline_' + key, JSON.stringify(dd));
+  }
+
+  isSyncing = false;
+  btn.classList.remove('saving');
+  lbl.textContent = 'Save & Sync';
+  renderCalendar();
+}
+
+// ── RENDER ───────────────────────────────────────────────────────────────────
+function render() {
+  document.getElementById('month-title').textContent = MFULL[curMonth];
+  renderCalendar();
+  renderActivities();
+  renderScores();
+}
+
+function renderMonthTabs() {
+  const el = document.getElementById('month-tabs');
+  el.innerHTML = MONTHS.map((m, i) =>
+    `<button class="mtab${i===curMonth?' active':''}" onclick="setMonth(${i})">${m}</button>`
+  ).join('');
+}
+
+function renderCalendar() {
+  const el     = document.getElementById('cal-grid');
+  const total  = MDAYS[curMonth];
+  const firstDOW = new Date(2026, MNUMS[curMonth]-1, 1).getDay();
+  const today  = new Date();
+  const isThisMonth = (MNUMS[curMonth]-1 === today.getMonth() && today.getFullYear() === 2026);
+  let html = '';
+
+  for (let i = 0; i < firstDOW; i++)
+    html += `<div class="cal-cell empty"></div>`;
+
+  for (let d = 1; d <= total; d++) {
+    const dow   = (firstDOW + d - 1) % 7;
+    const isSun = dow === 0;
+    const isToday = isThisMonth && d === today.getDate();
+    const isSel = d === curDay && curMonth === curMonth;
+    const key   = `${MNUMS[curMonth]}-${d}`;
+    const dd    = sheetData[key] || {};
+    let s1=0,s2=0,t=0;
+    ACTIVITIES.forEach(a => {
+      if (dd[a.id+'_1']) { t++; if(dd[a.id+'_1']==='done') s1++; }
+      if (dd[a.id+'_2']) { t++; if(dd[a.id+'_2']==='done') s2++; }
+    });
+    const hasData = t > 0;
+    const pips = hasData
+      ? `<div class="cpips">
+           <div class="pip" style="background:${s1>0?'var(--green)':'var(--border)'}"></div>
+           <div class="pip" style="background:${s2>0?'var(--blue)':'var(--border)'}"></div>
+         </div>` : '';
+
+    html += `<div class="cal-cell${isSun?' sun':''}${isToday?' today':''}${d===curDay?' selected':''}"
+      onclick="setDay(${d})">
+      <div class="cd">${DNAMES[dow]}</div>
+      <div class="cn">${d}</div>
+      ${pips}
+    </div>`;
+  }
+  el.innerHTML = html;
+}
+
+function renderActivities() {
+  const key = `${MNUMS[curMonth]}-${curDay}`;
+  const dd  = sheetData[key] || {};
+  const dow = new Date(2026, MNUMS[curMonth]-1, curDay).getDay();
+  const isSun = dow === 0;
+
+  document.getElementById('weight-section').style.display = isSun ? 'block' : 'none';
+  if (isSun) {
+    document.getElementById('wt1').value = dd.wt1 || '';
+    document.getElementById('wt2').value = dd.wt2 || '';
+  }
+
+  const d = new Date(2026, MNUMS[curMonth]-1, curDay);
+  document.getElementById('day-heading').textContent =
+    `${DNAMES[dow]}, ${MFULL[curMonth]} ${curDay}`;
+
+  const el = document.getElementById('act-list');
+  el.innerHTML = ACTIVITIES.map(a => {
+    const v1 = dd[a.id+'_1'] || '';
+    const v2 = dd[a.id+'_2'] || '';
+    const cls1 = v1==='done'?'done-s':v1==='skip'?'skip-s':'';
+    const cls2 = v2==='done'?'done-r':v2==='skip'?'skip-r':'';
+    const ico1 = v1==='done'?'✓':v1==='skip'?'✗':'';
+    const ico2 = v2==='done'?'✓':v2==='skip'?'✗':'';
+    const sty1 = (v1==='done'||v1==='skip') ? 'color:#fff' : 'color:var(--muted)';
+    const sty2 = (v2==='done'||v2==='skip') ? 'color:#fff' : 'color:var(--muted)';
+    return `<div class="act-row">
+      <span class="act-emoji">${a.emoji}</span>
+      <span class="act-name">${a.name}</span>
+      <div class="act-toggle ${cls1}" style="${sty1}" onclick="toggle('${a.id}','1',event)">${ico1}</div>
+      <div class="act-toggle ${cls2}" style="${sty2}" onclick="toggle('${a.id}','2',event)">${ico2}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderScores() {
+  const total = MDAYS[curMonth];
+  let d1=0,t1=0,d2=0,t2=0;
+  for (let d=1;d<=total;d++) {
+    const dd = sheetData[`${MNUMS[curMonth]}-${d}`] || {};
+    ACTIVITIES.forEach(a => {
+      if(dd[a.id+'_1']){t1++;if(dd[a.id+'_1']==='done')d1++;}
+      if(dd[a.id+'_2']){t2++;if(dd[a.id+'_2']==='done')d2++;}
+    });
+  }
+  document.getElementById('pct1').textContent = t1 ? Math.round(d1/t1*100)+'%' : '–';
+  document.getElementById('pct2').textContent = t2 ? Math.round(d2/t2*100)+'%' : '–';
+}
+
+// ── INTERACTIONS ─────────────────────────────────────────────────────────────
+function toggle(id, user, e) {
+  e.stopPropagation();
+  const key = `${MNUMS[curMonth]}-${curDay}`;
+  if (!sheetData[key]) sheetData[key] = {};
+  const dd  = sheetData[key];
+  const k   = id + '_' + user;
+  const cur = dd[k] || '';
+  dd[k] = cur==='' ? 'done' : cur==='done' ? 'skip' : '';
+  renderActivities();
+  renderCalendar();
+  renderScores();
+}
+
+function setMonth(i) {
+  curMonth = i;
+  curDay = (i === new Date().getMonth()-3) ? new Date().getDate() : 1;
+  renderMonthTabs();
+  render();
+}
+
+function setDay(d) {
+  curDay = d;
+  renderCalendar();
+  renderActivities();
+}
+
+// ── SETTINGS ──────────────────────────────────────────────────────────────────
+function openSettings() {
+  document.getElementById('s-name').value   = cfg.name   || '';
+  document.getElementById('s-cousin').value = cfg.cousin || '';
+  document.getElementById('s-script').value = cfg.script || '';
+  document.getElementById('settings-modal').classList.add('open');
+}
+function closeSettings() {
+  document.getElementById('settings-modal').classList.remove('open');
+}
+function updateSettings() {
+  cfg.name   = document.getElementById('s-name').value.trim();
+  cfg.cousin = document.getElementById('s-cousin').value.trim();
+  cfg.script = document.getElementById('s-script').value.trim();
+  localStorage.setItem('dart_cfg', JSON.stringify(cfg));
+  updateNames();
+  closeSettings();
+  showToast('Settings saved');
+}
+function resetApp() {
+  if (confirm('Reset and reconfigure?')) {
+    localStorage.removeItem('dart_cfg');
+    location.reload();
+  }
+}
+
+// ── UTILS ────────────────────────────────────────────────────────────────────
+function setSyncStatus(state, text) {
+  const dot  = document.getElementById('sync-dot');
+  const txt  = document.getElementById('sync-text');
+  dot.className = 'sync-dot' + (state==='ok'?'':' '+state);
+  txt.textContent = text;
+}
+
+function showToast(msg, isError=false) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className   = 'toast' + (isError?' error':'') + ' show';
+  setTimeout(() => t.className = 'toast' + (isError?' error':''), 2800);
+}
+
+// ── START ────────────────────────────────────────────────────────────────────
+// Load cached data immediately so app feels instant
+const cachedData = localStorage.getItem('dart_cache');
+if (cachedData) sheetData = JSON.parse(cachedData);
+
+if (loadConfig()) initApp();
+</script>
+</body>
+</html>
