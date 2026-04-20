@@ -277,27 +277,56 @@ const ACTIVITIES = [
   {id:'pmcl',  emoji:'🌙', name:'PM Cleansing'},
   {id:'sleep', emoji:'😴', name:'Sleep'},
 ];
-
-const MONTHS  = ['Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-const MFULL   = ['April','May','June','July','August','September','October','November','December'];
-const MNUMS   = [4,5,6,7,8,9,10,11,12];
-const MDAYS   = [30,31,30,31,31,30,31,30,31];
-const DNAMES  = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const MONTHS = ['Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const MFULL  = ['April','May','June','July','August','September','October','November','December'];
+const MNUMS  = [4,5,6,7,8,9,10,11,12];
+const MDAYS  = [30,31,30,31,31,30,31,30,31];
+const DNAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
 let cfg = {};
-let sheetData = {};    // { "4-21": { shaam_1:'done', med_2:'skip', wt1:'62' ... } }
 let curMonth = 0;
-let curDay = 1;
+let curDay   = 1;
 let isSyncing = false;
 
-// ── CONFIG ──────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+//  TWO SEPARATE STORES
+//  myData     = YOUR ticks — lives in localStorage, never overwritten by sync
+//  remoteData = COUSIN's ticks — fetched from Google Sheet, refreshed silently
+// ─────────────────────────────────────────────────────────────────────────────
+let myData     = {};   // { "4-21": { shaam:'done', med:'skip', wt:'62' } }
+let remoteData = {};   // same shape, cousin's entries only
+
+function mySlot()     { return '_1'; }   // you are always slot 1
+function theirSlot()  { return '_2'; }   // cousin is always slot 2
+
+// Combined view for rendering: merge remote then overlay my own data on top
+function merged(key) {
+  const r = remoteData[key] || {};
+  const m = myData[key]     || {};
+  const out = {};
+  // Start with remote (has both slots from sheet)
+  Object.assign(out, r);
+  // Overwrite MY slot with my local data — my data always wins
+  ACTIVITIES.forEach(a => {
+    const mk = a.id + mySlot();
+    if (m[a.id] !== undefined) out[mk] = m[a.id];
+  });
+  if (m.wt !== undefined) out['wt' + mySlot().replace('_','')] = m.wt;
+  return out;
+}
+
+// ── CONFIG ───────────────────────────────────────────────────────────────────
 function loadConfig() {
   const raw = localStorage.getItem('dart_cfg');
-  if (raw) {
-    cfg = JSON.parse(raw);
-    return true;
-  }
-  return false;
+  if (!raw) return false;
+  cfg = JSON.parse(raw);
+  // Load my saved data
+  const md = localStorage.getItem('dart_mydata');
+  if (md) myData = JSON.parse(md);
+  // Load last known remote data (so screen isn't blank on reload)
+  const rd = localStorage.getItem('dart_remote');
+  if (rd) remoteData = JSON.parse(rd);
+  return true;
 }
 
 function saveConfig() {
@@ -305,68 +334,65 @@ function saveConfig() {
   const cousin = document.getElementById('cfg-cousin').value.trim();
   const sheet  = document.getElementById('cfg-sheet').value.trim();
   const script = document.getElementById('cfg-script').value.trim();
-  if (!name || !cousin || !sheet || !script) {
-    showToast('Please fill in all fields', true); return;
-  }
+  if (!name || !cousin || !sheet || !script) { showToast('Please fill in all fields', true); return; }
   cfg = { name, cousin, sheet, script };
   localStorage.setItem('dart_cfg', JSON.stringify(cfg));
   initApp();
 }
 
-// ── INIT ─────────────────────────────────────────────────────────────────────
+function persistMyData() {
+  localStorage.setItem('dart_mydata', JSON.stringify(myData));
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
 function initApp() {
   document.getElementById('setup-screen').style.display = 'none';
   document.getElementById('app-screen').style.display   = 'block';
-
   const today = new Date();
   curMonth = Math.max(0, Math.min(8, today.getMonth() - 3));
   curDay   = today.getDate();
-
   updateNames();
   renderMonthTabs();
-  fetchData();
+  render();
+  fetchRemote();  // fetch cousin's data in background
+  // Auto-refresh cousin's data every 30s — NEVER touches myData
+  setInterval(fetchRemote, 30000);
 }
 
 function updateNames() {
   const n1 = cfg.name   || 'You';
   const n2 = cfg.cousin || 'Cousin';
-  document.getElementById('name1').textContent  = n1;
-  document.getElementById('name2').textContent  = n2;
-  document.getElementById('av1').textContent    = n1[0].toUpperCase();
-  document.getElementById('av2').textContent    = n2[0].toUpperCase();
-  document.getElementById('ch1').textContent    = n1[0].toUpperCase();
-  document.getElementById('ch2').textContent    = n2[0].toUpperCase();
+  document.getElementById('name1').textContent   = n1;
+  document.getElementById('name2').textContent   = n2;
+  document.getElementById('av1').textContent     = n1[0].toUpperCase();
+  document.getElementById('av2').textContent     = n2[0].toUpperCase();
+  document.getElementById('ch1').textContent     = n1[0].toUpperCase();
+  document.getElementById('ch2').textContent     = n2[0].toUpperCase();
   document.getElementById('wlabel1').textContent = n1 + ' (kg)';
   document.getElementById('wlabel2').textContent = n2 + ' (kg)';
 }
 
-// ── GOOGLE SHEETS API ─────────────────────────────────────────────────────────
-async function fetchData() {
+// ── FETCH COUSIN'S DATA (read-only, never overwrites myData) ──────────────────
+async function fetchRemote() {
   setSyncStatus('syncing', 'Syncing…');
   try {
     const url = `${cfg.script}?action=get&sheet=${encodeURIComponent(cfg.sheet)}&t=${Date.now()}`;
     const res  = await fetch(url);
     const json = await res.json();
     if (json.data) {
-      sheetData = json.data;
-      localStorage.setItem('dart_cache', JSON.stringify(sheetData));
+      remoteData = json.data;
+      localStorage.setItem('dart_remote', JSON.stringify(remoteData));
     }
     const now = new Date();
-    const hh = now.getHours().toString().padStart(2,'0');
-    const mm = now.getMinutes().toString().padStart(2,'0');
-    setSyncStatus('ok', `Last synced ${hh}:${mm}`);
+    setSyncStatus('ok', `Synced ${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`);
   } catch(e) {
-    const cache = localStorage.getItem('dart_cache');
-    if (cache) sheetData = JSON.parse(cache);
-    setSyncStatus('offline', 'Offline – tap to retry');
-    document.getElementById('sync-dot').onclick = fetchData;
+    setSyncStatus('offline', 'Offline — tap dot to retry');
+    document.getElementById('sync-dot').onclick = () => { document.getElementById('sync-dot').onclick=null; fetchRemote(); };
   }
-  render();
+  render();  // re-render to show cousin's latest
 }
 
-// Auto-refresh every 30 seconds to pick up cousin's updates
-setInterval(() => { if (cfg.script) fetchData(); }, 30000);
-
+// ── SAVE MY DAY TO GOOGLE SHEET ───────────────────────────────────────────────
 async function saveDay() {
   if (isSyncing) return;
   isSyncing = true;
@@ -376,31 +402,41 @@ async function saveDay() {
   lbl.innerHTML = '<div class="spinner"></div>';
 
   const key = `${MNUMS[curMonth]}-${curDay}`;
-  if (!sheetData[key]) sheetData[key] = {};
-  const dd = sheetData[key];
+  if (!myData[key]) myData[key] = {};
 
-  // collect weight if Sunday
+  // Collect weight if Sunday
   const dow = new Date(2026, MNUMS[curMonth]-1, curDay).getDay();
   if (dow === 0) {
-    dd.wt1 = document.getElementById('wt1').value || '';
-    dd.wt2 = document.getElementById('wt2').value || '';
+    myData[key].wt = document.getElementById('wt' + mySlot().replace('_','')).value || '';
   }
+
+  // Persist locally first — so even if network fails, my data is safe
+  persistMyData();
+
+  // Build the full day object to send: take what's on the sheet + overlay my slot
+  const existing = remoteData[key] || {};
+  const toSend   = Object.assign({}, existing);
+  ACTIVITIES.forEach(a => {
+    const v = myData[key][a.id];
+    if (v !== undefined) toSend[a.id + mySlot()] = v;
+  });
+  if (myData[key].wt !== undefined) toSend['wt' + mySlot().replace('_','')] = myData[key].wt;
 
   try {
     const res = await fetch(cfg.script, {
       method: 'POST',
-      body: JSON.stringify({ action:'set', sheet: cfg.sheet, key, data: dd })
+      body: JSON.stringify({ action:'set', sheet: cfg.sheet, key, data: toSend })
     });
     const json = await res.json();
     if (json.ok) {
+      // Update remote cache so we don't lose cousin's data
+      remoteData[key] = toSend;
+      localStorage.setItem('dart_remote', JSON.stringify(remoteData));
       showToast('Saved ✓');
       setSyncStatus('ok', 'Saved just now');
-    } else {
-      throw new Error('save failed');
-    }
+    } else throw new Error();
   } catch(e) {
-    showToast('Saved locally (will sync when online)', false);
-    localStorage.setItem('dart_offline_' + key, JSON.stringify(dd));
+    showToast('Saved on your phone. Will sync when online.');
   }
 
   isSyncing = false;
@@ -409,7 +445,7 @@ async function saveDay() {
   renderCalendar();
 }
 
-// ── RENDER ───────────────────────────────────────────────────────────────────
+// ── RENDER ────────────────────────────────────────────────────────────────────
 function render() {
   document.getElementById('month-title').textContent = MFULL[curMonth];
   renderCalendar();
@@ -419,82 +455,64 @@ function render() {
 
 function renderMonthTabs() {
   const el = document.getElementById('month-tabs');
-  el.innerHTML = MONTHS.map((m, i) =>
+  el.innerHTML = MONTHS.map((m,i) =>
     `<button class="mtab${i===curMonth?' active':''}" onclick="setMonth(${i})">${m}</button>`
   ).join('');
 }
 
 function renderCalendar() {
-  const el     = document.getElementById('cal-grid');
-  const total  = MDAYS[curMonth];
+  const el = document.getElementById('cal-grid');
+  const total = MDAYS[curMonth];
   const firstDOW = new Date(2026, MNUMS[curMonth]-1, 1).getDay();
-  const today  = new Date();
+  const today = new Date();
   const isThisMonth = (MNUMS[curMonth]-1 === today.getMonth() && today.getFullYear() === 2026);
   let html = '';
-
-  for (let i = 0; i < firstDOW; i++)
-    html += `<div class="cal-cell empty"></div>`;
-
-  for (let d = 1; d <= total; d++) {
-    const dow   = (firstDOW + d - 1) % 7;
-    const isSun = dow === 0;
-    const isToday = isThisMonth && d === today.getDate();
-    const isSel = d === curDay && curMonth === curMonth;
-    const key   = `${MNUMS[curMonth]}-${d}`;
-    const dd    = sheetData[key] || {};
+  for (let i=0; i<firstDOW; i++) html += `<div class="cal-cell empty"></div>`;
+  for (let d=1; d<=total; d++) {
+    const dow = (firstDOW+d-1)%7;
+    const key = `${MNUMS[curMonth]}-${d}`;
+    const dd  = merged(key);
     let s1=0,s2=0,t=0;
     ACTIVITIES.forEach(a => {
-      if (dd[a.id+'_1']) { t++; if(dd[a.id+'_1']==='done') s1++; }
-      if (dd[a.id+'_2']) { t++; if(dd[a.id+'_2']==='done') s2++; }
+      if(dd[a.id+'_1']){t++;if(dd[a.id+'_1']==='done')s1++;}
+      if(dd[a.id+'_2']){t++;if(dd[a.id+'_2']==='done')s2++;}
     });
-    const hasData = t > 0;
-    const pips = hasData
-      ? `<div class="cpips">
-           <div class="pip" style="background:${s1>0?'var(--green)':'var(--border)'}"></div>
-           <div class="pip" style="background:${s2>0?'var(--blue)':'var(--border)'}"></div>
-         </div>` : '';
-
-    html += `<div class="cal-cell${isSun?' sun':''}${isToday?' today':''}${d===curDay?' selected':''}"
-      onclick="setDay(${d})">
+    const pips = t>0 ? `<div class="cpips">
+      <div class="pip" style="background:${s1>0?'var(--green)':'var(--border)'}"></div>
+      <div class="pip" style="background:${s2>0?'var(--blue)':'var(--border)'}"></div>
+    </div>` : '';
+    html += `<div class="cal-cell${dow===0?' sun':''}${(isThisMonth&&d===today.getDate())?' today':''}${d===curDay?' selected':''}" onclick="setDay(${d})">
       <div class="cd">${DNAMES[dow]}</div>
-      <div class="cn">${d}</div>
-      ${pips}
-    </div>`;
+      <div class="cn">${d}</div>${pips}</div>`;
   }
   el.innerHTML = html;
 }
 
 function renderActivities() {
   const key = `${MNUMS[curMonth]}-${curDay}`;
-  const dd  = sheetData[key] || {};
+  const dd  = merged(key);
   const dow = new Date(2026, MNUMS[curMonth]-1, curDay).getDay();
-  const isSun = dow === 0;
-
-  document.getElementById('weight-section').style.display = isSun ? 'block' : 'none';
-  if (isSun) {
+  document.getElementById('day-heading').textContent = `${DNAMES[dow]}, ${MFULL[curMonth]} ${curDay}`;
+  document.getElementById('weight-section').style.display = dow===0 ? 'block' : 'none';
+  if (dow===0) {
     document.getElementById('wt1').value = dd.wt1 || '';
     document.getElementById('wt2').value = dd.wt2 || '';
   }
-
-  const d = new Date(2026, MNUMS[curMonth]-1, curDay);
-  document.getElementById('day-heading').textContent =
-    `${DNAMES[dow]}, ${MFULL[curMonth]} ${curDay}`;
-
   const el = document.getElementById('act-list');
   el.innerHTML = ACTIVITIES.map(a => {
     const v1 = dd[a.id+'_1'] || '';
     const v2 = dd[a.id+'_2'] || '';
-    const cls1 = v1==='done'?'done-s':v1==='skip'?'skip-s':'';
-    const cls2 = v2==='done'?'done-r':v2==='skip'?'skip-r':'';
-    const ico1 = v1==='done'?'✓':v1==='skip'?'✗':'';
-    const ico2 = v2==='done'?'✓':v2==='skip'?'✗':'';
-    const sty1 = (v1==='done'||v1==='skip') ? 'color:#fff' : 'color:var(--muted)';
-    const sty2 = (v2==='done'||v2==='skip') ? 'color:#fff' : 'color:var(--muted)';
+    const c1 = v1==='done'?'done-s':v1==='skip'?'skip-s':'';
+    const c2 = v2==='done'?'done-r':v2==='skip'?'skip-r':'';
+    const i1 = v1==='done'?'✓':v1==='skip'?'✗':'';
+    const i2 = v2==='done'?'✓':v2==='skip'?'✗':'';
+    const s1 = (v1==='done'||v1==='skip')?'color:#fff':'color:var(--muted)';
+    const s2 = (v2==='done'||v2==='skip')?'color:#fff':'color:var(--muted)';
     return `<div class="act-row">
       <span class="act-emoji">${a.emoji}</span>
       <span class="act-name">${a.name}</span>
-      <div class="act-toggle ${cls1}" style="${sty1}" onclick="toggle('${a.id}','1',event)">${ico1}</div>
-      <div class="act-toggle ${cls2}" style="${sty2}" onclick="toggle('${a.id}','2',event)">${ico2}</div>
+      <div class="act-toggle ${c1}" style="${s1}" onclick="toggle('${a.id}',event)">${i1}</div>
+      <div class="act-toggle ${c2}" style="${s2};cursor:default">${i2}</div>
     </div>`;
   }).join('');
 }
@@ -503,7 +521,7 @@ function renderScores() {
   const total = MDAYS[curMonth];
   let d1=0,t1=0,d2=0,t2=0;
   for (let d=1;d<=total;d++) {
-    const dd = sheetData[`${MNUMS[curMonth]}-${d}`] || {};
+    const dd = merged(`${MNUMS[curMonth]}-${d}`);
     ACTIVITIES.forEach(a => {
       if(dd[a.id+'_1']){t1++;if(dd[a.id+'_1']==='done')d1++;}
       if(dd[a.id+'_2']){t2++;if(dd[a.id+'_2']==='done')d2++;}
@@ -513,15 +531,14 @@ function renderScores() {
   document.getElementById('pct2').textContent = t2 ? Math.round(d2/t2*100)+'%' : '–';
 }
 
-// ── INTERACTIONS ─────────────────────────────────────────────────────────────
-function toggle(id, user, e) {
+// ── TOGGLE (only your column) ─────────────────────────────────────────────────
+function toggle(id, e) {
   e.stopPropagation();
   const key = `${MNUMS[curMonth]}-${curDay}`;
-  if (!sheetData[key]) sheetData[key] = {};
-  const dd  = sheetData[key];
-  const k   = id + '_' + user;
-  const cur = dd[k] || '';
-  dd[k] = cur==='' ? 'done' : cur==='done' ? 'skip' : '';
+  if (!myData[key]) myData[key] = {};
+  const cur = myData[key][id] || '';
+  myData[key][id] = cur==='' ? 'done' : cur==='done' ? 'skip' : '';
+  persistMyData();   // save immediately to localStorage
   renderActivities();
   renderCalendar();
   renderScores();
@@ -529,16 +546,11 @@ function toggle(id, user, e) {
 
 function setMonth(i) {
   curMonth = i;
-  curDay = (i === new Date().getMonth()-3) ? new Date().getDate() : 1;
+  curDay = (MNUMS[i]-1 === new Date().getMonth() && new Date().getFullYear()===2026) ? new Date().getDate() : 1;
   renderMonthTabs();
   render();
 }
-
-function setDay(d) {
-  curDay = d;
-  renderCalendar();
-  renderActivities();
-}
+function setDay(d) { curDay=d; renderCalendar(); renderActivities(); }
 
 // ── SETTINGS ──────────────────────────────────────────────────────────────────
 function openSettings() {
@@ -547,45 +559,34 @@ function openSettings() {
   document.getElementById('s-script').value = cfg.script || '';
   document.getElementById('settings-modal').classList.add('open');
 }
-function closeSettings() {
-  document.getElementById('settings-modal').classList.remove('open');
-}
+function closeSettings() { document.getElementById('settings-modal').classList.remove('open'); }
 function updateSettings() {
   cfg.name   = document.getElementById('s-name').value.trim();
   cfg.cousin = document.getElementById('s-cousin').value.trim();
   cfg.script = document.getElementById('s-script').value.trim();
   localStorage.setItem('dart_cfg', JSON.stringify(cfg));
-  updateNames();
-  closeSettings();
-  showToast('Settings saved');
+  updateNames(); closeSettings(); showToast('Settings saved');
 }
 function resetApp() {
-  if (confirm('Reset and reconfigure?')) {
+  if (confirm('This will clear your config. Your data stays in Google Sheets. Continue?')) {
     localStorage.removeItem('dart_cfg');
     location.reload();
   }
 }
 
-// ── UTILS ────────────────────────────────────────────────────────────────────
+// ── UTILS ─────────────────────────────────────────────────────────────────────
 function setSyncStatus(state, text) {
-  const dot  = document.getElementById('sync-dot');
-  const txt  = document.getElementById('sync-text');
-  dot.className = 'sync-dot' + (state==='ok'?'':' '+state);
-  txt.textContent = text;
+  document.getElementById('sync-dot').className = 'sync-dot' + (state==='ok'?'':' '+state);
+  document.getElementById('sync-text').textContent = text;
 }
-
 function showToast(msg, isError=false) {
   const t = document.getElementById('toast');
   t.textContent = msg;
-  t.className   = 'toast' + (isError?' error':'') + ' show';
-  setTimeout(() => t.className = 'toast' + (isError?' error':''), 2800);
+  t.className = 'toast'+(isError?' error':'')+' show';
+  setTimeout(() => t.className='toast'+(isError?' error':''), 2800);
 }
 
-// ── START ────────────────────────────────────────────────────────────────────
-// Load cached data immediately so app feels instant
-const cachedData = localStorage.getItem('dart_cache');
-if (cachedData) sheetData = JSON.parse(cachedData);
-
+// ── START ──────────────────────────────────────────────────────────────────────
 if (loadConfig()) initApp();
 </script>
 </body>
