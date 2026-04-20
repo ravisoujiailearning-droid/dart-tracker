@@ -141,12 +141,11 @@
   <div class="setup-card">
     <h3>⚙️ Connect Google Sheet</h3>
     <div class="field">
-      <label>Your Name</label>
-      <input type="text" id="cfg-name" placeholder="e.g. Soujanya" maxlength="20">
-    </div>
-    <div class="field">
-      <label>Cousin's Name</label>
-      <input type="text" id="cfg-cousin" placeholder="e.g. Ravi" maxlength="20">
+      <label>Who are you?</label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px">
+        <button id="pick-s" onclick="pickUser('S')" style="padding:10px;border-radius:10px;border:2px solid var(--border);background:var(--bg);font-size:14px;font-weight:600;cursor:pointer;transition:all 0.15s">Soujanya</button>
+        <button id="pick-r" onclick="pickUser('R')" style="padding:10px;border-radius:10px;border:2px solid var(--border);background:var(--bg);font-size:14px;font-weight:600;cursor:pointer;transition:all 0.15s">Ravi</button>
+      </div>
     </div>
     <div class="field">
       <label>Google Sheet ID</label>
@@ -240,12 +239,8 @@
   <div class="modal">
     <h3>Settings</h3>
     <div class="field">
-      <label>Your Name</label>
-      <input type="text" id="s-name" maxlength="20">
-    </div>
-    <div class="field">
-      <label>Cousin's Name</label>
-      <input type="text" id="s-cousin" maxlength="20">
+      <label>Logged in as</label>
+      <div id="s-whoami" style="font-size:15px;font-weight:600;padding:8px 0;color:var(--text)"></div>
     </div>
     <div class="field">
       <label>Apps Script URL</label>
@@ -256,7 +251,7 @@
       <button class="btn-primary" style="flex:1" onclick="updateSettings()">Save</button>
     </div>
     <div class="modal-btns">
-      <button class="btn-danger" onclick="resetApp()">Reset & Reconfigure</button>
+      <button class="btn-danger" onclick="resetApp()">Switch User / Reconfigure</button>
     </div>
   </div>
 </div>
@@ -296,8 +291,8 @@ let isSyncing = false;
 let myData     = {};   // { "4-21": { shaam:'done', med:'skip', wt:'62' } }
 let remoteData = {};   // same shape, cousin's entries only
 
-function mySlot()     { return '_1'; }   // you are always slot 1
-function theirSlot()  { return '_2'; }   // cousin is always slot 2
+function mySlot()    { return cfg.slot === 2 ? '_2' : '_1'; }   // Soujanya=_1, Ravi=_2
+function theirSlot() { return cfg.slot === 2 ? '_1' : '_2'; }
 
 // Combined view for rendering: merge remote then overlay my own data on top
 function merged(key) {
@@ -329,13 +324,31 @@ function loadConfig() {
   return true;
 }
 
+function pickUser(who) {
+  document.getElementById('pick-s').style.background = who==='S' ? 'var(--green)' : 'var(--bg)';
+  document.getElementById('pick-s').style.color      = who==='S' ? '#fff' : 'var(--text)';
+  document.getElementById('pick-s').style.borderColor= who==='S' ? 'var(--green)' : 'var(--border)';
+  document.getElementById('pick-r').style.background = who==='R' ? 'var(--blue)' : 'var(--bg)';
+  document.getElementById('pick-r').style.color      = who==='R' ? '#fff' : 'var(--text)';
+  document.getElementById('pick-r').style.borderColor= who==='R' ? 'var(--blue)' : 'var(--border)';
+  document.getElementById('pick-s').dataset.sel = who==='S' ? '1' : '';
+  document.getElementById('pick-r').dataset.sel = who==='R' ? '1' : '';
+}
+
 function saveConfig() {
-  const name   = document.getElementById('cfg-name').value.trim();
-  const cousin = document.getElementById('cfg-cousin').value.trim();
+  const whoS   = document.getElementById('pick-s').dataset.sel === '1';
+  const whoR   = document.getElementById('pick-r').dataset.sel === '1';
+  if (!whoS && !whoR) { showToast('Please pick who you are', true); return; }
   const sheet  = document.getElementById('cfg-sheet').value.trim();
   const script = document.getElementById('cfg-script').value.trim();
-  if (!name || !cousin || !sheet || !script) { showToast('Please fill in all fields', true); return; }
-  cfg = { name, cousin, sheet, script };
+  if (!sheet || !script) { showToast('Please fill in Sheet ID and Script URL', true); return; }
+  // Soujanya = slot 1, Ravi = slot 2 — fixed, same on both phones
+  cfg = {
+    name:   whoS ? 'Soujanya' : 'Ravi',
+    cousin: whoS ? 'Ravi' : 'Soujanya',
+    slot:   whoS ? 1 : 2,
+    sheet, script
+  };
   localStorage.setItem('dart_cfg', JSON.stringify(cfg));
   initApp();
 }
@@ -360,16 +373,16 @@ function initApp() {
 }
 
 function updateNames() {
-  const n1 = cfg.name   || 'You';
-  const n2 = cfg.cousin || 'Cousin';
-  document.getElementById('name1').textContent   = n1;
-  document.getElementById('name2').textContent   = n2;
-  document.getElementById('av1').textContent     = n1[0].toUpperCase();
-  document.getElementById('av2').textContent     = n2[0].toUpperCase();
-  document.getElementById('ch1').textContent     = n1[0].toUpperCase();
-  document.getElementById('ch2').textContent     = n2[0].toUpperCase();
-  document.getElementById('wlabel1').textContent = n1 + ' (kg)';
-  document.getElementById('wlabel2').textContent = n2 + ' (kg)';
+  // Slot 1 is always Soujanya (green, left), Slot 2 is always Ravi (blue, right)
+  // Names in UI are always S=Soujanya, R=Ravi regardless of who is viewing
+  document.getElementById('name1').textContent   = 'Soujanya';
+  document.getElementById('name2').textContent   = 'Ravi';
+  document.getElementById('av1').textContent     = 'S';
+  document.getElementById('av2').textContent     = 'R';
+  document.getElementById('ch1').textContent     = 'S';
+  document.getElementById('ch2').textContent     = 'R';
+  document.getElementById('wlabel1').textContent = 'Soujanya (kg)';
+  document.getElementById('wlabel2').textContent = 'Ravi (kg)';
 }
 
 // ── FETCH COUSIN'S DATA (read-only, never overwrites myData) ──────────────────
@@ -404,10 +417,11 @@ async function saveDay() {
   const key = `${MNUMS[curMonth]}-${curDay}`;
   if (!myData[key]) myData[key] = {};
 
-  // Collect weight if Sunday
+  // Collect weight if Sunday — save under my slot key
   const dow = new Date(2026, MNUMS[curMonth]-1, curDay).getDay();
   if (dow === 0) {
-    myData[key].wt = document.getElementById('wt' + mySlot().replace('_','')).value || '';
+    const wtKey = 'wt' + mySlot().replace('_','');
+    myData[key].wt = document.getElementById(wtKey).value || '';
   }
 
   // Persist locally first — so even if network fails, my data is safe
@@ -554,18 +568,17 @@ function setDay(d) { curDay=d; renderCalendar(); renderActivities(); }
 
 // ── SETTINGS ──────────────────────────────────────────────────────────────────
 function openSettings() {
-  document.getElementById('s-name').value   = cfg.name   || '';
-  document.getElementById('s-cousin').value = cfg.cousin || '';
+  document.getElementById('s-whoami').textContent = cfg.name + ' (slot ' + cfg.slot + ')';
   document.getElementById('s-script').value = cfg.script || '';
   document.getElementById('settings-modal').classList.add('open');
 }
 function closeSettings() { document.getElementById('settings-modal').classList.remove('open'); }
 function updateSettings() {
-  cfg.name   = document.getElementById('s-name').value.trim();
-  cfg.cousin = document.getElementById('s-cousin').value.trim();
   cfg.script = document.getElementById('s-script').value.trim();
   localStorage.setItem('dart_cfg', JSON.stringify(cfg));
-  updateNames(); closeSettings(); showToast('Settings saved');
+  closeSettings();
+  showToast('Settings saved');
+  fetchRemote();
 }
 function resetApp() {
   if (confirm('This will clear your config. Your data stays in Google Sheets. Continue?')) {
