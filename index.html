@@ -259,6 +259,7 @@
 <div class="toast" id="toast"></div>
 
 <script>
+<script>
 const ACTIVITIES = [
   {id:'shaam', emoji:'🔮', name:'Shaambhavi'},
   {id:'med',   emoji:'🧘', name:'Meditation'},
@@ -278,83 +279,68 @@ const MNUMS  = [4,5,6,7,8,9,10,11,12];
 const MDAYS  = [30,31,30,31,31,30,31,30,31];
 const DNAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
-let cfg = {};
-let curMonth = 0;
-let curDay   = 1;
+let cfg       = {};
+let curMonth  = 0;
+let curDay    = 1;
 let isSyncing = false;
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  TWO SEPARATE STORES
-//  myData     = YOUR ticks — lives in localStorage, never overwritten by sync
-//  remoteData = COUSIN's ticks — fetched from Google Sheet, refreshed silently
+// ONE store: localData mirrors the sheet exactly.
+// Keys: "4-21", "5-3" etc.
+// Values: { shaam_1:'done', shaam_2:'skip', med_1:'', med_2:'done', wt1:'62', wt2:'70' }
+//
+// On FETCH: sheet data is merged in, but MY slot values are never overwritten
+//           (protected by keeping a separate copy of my own ticks).
+// On TOGGLE: only my slot key is updated.
+// On SAVE: full day object (both slots) is sent to sheet.
 // ─────────────────────────────────────────────────────────────────────────────
-let myData     = {};   // { "4-21": { shaam:'done', med:'skip', wt:'62' } }
-let remoteData = {};   // same shape, cousin's entries only
+let localData = {};   // full combined view
+let myTicks   = {};   // only my slot — { "4-21": { shaam:'done', med:'skip' } }
+                      // this is the source of truth for my column, never overwritten
 
-function mySlot()    { return cfg.slot === 2 ? '_2' : '_1'; }   // Soujanya=_1, Ravi=_2
+function mySlot()    { return cfg.slot === 2 ? '_2' : '_1'; }
 function theirSlot() { return cfg.slot === 2 ? '_1' : '_2'; }
 
-// Combined view for rendering: merge remote then overlay my own data on top
-function merged(key) {
-  const r = remoteData[key] || {};
-  const m = myData[key]     || {};
-  const out = {};
-  // Start with remote (has both slots from sheet)
-  Object.assign(out, r);
-  // Overwrite MY slot with my local data — my data always wins
-  ACTIVITIES.forEach(a => {
-    const mk = a.id + mySlot();
-    if (m[a.id] !== undefined) out[mk] = m[a.id];
-  });
-  if (m.wt !== undefined) out['wt' + mySlot().replace('_','')] = m.wt;
-  return out;
-}
-
-// ── CONFIG ───────────────────────────────────────────────────────────────────
+// ── CONFIG ────────────────────────────────────────────────────────────────────
 function loadConfig() {
   const raw = localStorage.getItem('dart_cfg');
   if (!raw) return false;
   cfg = JSON.parse(raw);
-  // Load my saved data
-  const md = localStorage.getItem('dart_mydata');
-  if (md) myData = JSON.parse(md);
-  // Load last known remote data (so screen isn't blank on reload)
-  const rd = localStorage.getItem('dart_remote');
-  if (rd) remoteData = JSON.parse(rd);
+  const ld = localStorage.getItem('dart_localdata');
+  if (ld) localData = JSON.parse(ld);
+  const mt = localStorage.getItem('dart_myticks');
+  if (mt) myTicks = JSON.parse(mt);
   return true;
 }
 
+function persistAll() {
+  localStorage.setItem('dart_localdata', JSON.stringify(localData));
+  localStorage.setItem('dart_myticks',   JSON.stringify(myTicks));
+}
+
 function pickUser(who) {
-  document.getElementById('pick-s').style.background = who==='S' ? 'var(--green)' : 'var(--bg)';
-  document.getElementById('pick-s').style.color      = who==='S' ? '#fff' : 'var(--text)';
-  document.getElementById('pick-s').style.borderColor= who==='S' ? 'var(--green)' : 'var(--border)';
-  document.getElementById('pick-r').style.background = who==='R' ? 'var(--blue)' : 'var(--bg)';
-  document.getElementById('pick-r').style.color      = who==='R' ? '#fff' : 'var(--text)';
-  document.getElementById('pick-r').style.borderColor= who==='R' ? 'var(--blue)' : 'var(--border)';
-  document.getElementById('pick-s').dataset.sel = who==='S' ? '1' : '';
-  document.getElementById('pick-r').dataset.sel = who==='R' ? '1' : '';
+  const sBtn = document.getElementById('pick-s');
+  const rBtn = document.getElementById('pick-r');
+  sBtn.style.background  = who==='S' ? 'var(--green)' : 'var(--bg)';
+  sBtn.style.color       = who==='S' ? '#fff' : 'var(--text)';
+  sBtn.style.borderColor = who==='S' ? 'var(--green)' : 'var(--border)';
+  rBtn.style.background  = who==='R' ? 'var(--blue)' : 'var(--bg)';
+  rBtn.style.color       = who==='R' ? '#fff' : 'var(--text)';
+  rBtn.style.borderColor = who==='R' ? 'var(--blue)' : 'var(--border)';
+  sBtn.dataset.sel = who==='S' ? '1' : '';
+  rBtn.dataset.sel = who==='R' ? '1' : '';
 }
 
 function saveConfig() {
   const whoS   = document.getElementById('pick-s').dataset.sel === '1';
   const whoR   = document.getElementById('pick-r').dataset.sel === '1';
-  if (!whoS && !whoR) { showToast('Please pick who you are', true); return; }
+  if (!whoS && !whoR) { showToast('Please tap your name', true); return; }
   const sheet  = document.getElementById('cfg-sheet').value.trim();
   const script = document.getElementById('cfg-script').value.trim();
   if (!sheet || !script) { showToast('Please fill in Sheet ID and Script URL', true); return; }
-  // Soujanya = slot 1, Ravi = slot 2 — fixed, same on both phones
-  cfg = {
-    name:   whoS ? 'Soujanya' : 'Ravi',
-    cousin: whoS ? 'Ravi' : 'Soujanya',
-    slot:   whoS ? 1 : 2,
-    sheet, script
-  };
+  cfg = { name: whoS?'Soujanya':'Ravi', cousin: whoS?'Ravi':'Soujanya', slot: whoS?1:2, sheet, script };
   localStorage.setItem('dart_cfg', JSON.stringify(cfg));
   initApp();
-}
-
-function persistMyData() {
-  localStorage.setItem('dart_mydata', JSON.stringify(myData));
 }
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
@@ -367,14 +353,11 @@ function initApp() {
   updateNames();
   renderMonthTabs();
   render();
-  fetchRemote();  // fetch cousin's data in background
-  // Auto-refresh cousin's data every 30s — NEVER touches myData
+  fetchRemote();
   setInterval(fetchRemote, 30000);
 }
 
 function updateNames() {
-  // Slot 1 is always Soujanya (green, left), Slot 2 is always Ravi (blue, right)
-  // Names in UI are always S=Soujanya, R=Ravi regardless of who is viewing
   document.getElementById('name1').textContent   = 'Soujanya';
   document.getElementById('name2').textContent   = 'Ravi';
   document.getElementById('av1').textContent     = 'S';
@@ -385,27 +368,44 @@ function updateNames() {
   document.getElementById('wlabel2').textContent = 'Ravi (kg)';
 }
 
-// ── FETCH COUSIN'S DATA (read-only, never overwrites myData) ──────────────────
+// ── FETCH FROM SHEET (merges in their data, never overwrites my ticks) ─────────
 async function fetchRemote() {
   setSyncStatus('syncing', 'Syncing…');
   try {
-    const url = `${cfg.script}?action=get&sheet=${encodeURIComponent(cfg.sheet)}&t=${Date.now()}`;
+    const url  = `${cfg.script}?action=get&sheet=${encodeURIComponent(cfg.sheet)}&t=${Date.now()}`;
     const res  = await fetch(url);
     const json = await res.json();
+
     if (json.data) {
-      remoteData = json.data;
-      localStorage.setItem('dart_remote', JSON.stringify(remoteData));
+      // Merge sheet data in — but protect my own ticks
+      const sheetData = json.data;
+      Object.keys(sheetData).forEach(key => {
+        // Start with what the sheet has (has both slots)
+        if (!localData[key]) localData[key] = {};
+        Object.assign(localData[key], sheetData[key]);
+        // Now re-apply my own ticks on top — my ticks always win
+        if (myTicks[key]) {
+          Object.keys(myTicks[key]).forEach(actId => {
+            localData[key][actId + mySlot()] = myTicks[key][actId];
+          });
+        }
+      });
+      persistAll();
     }
+
     const now = new Date();
     setSyncStatus('ok', `Synced ${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`);
   } catch(e) {
     setSyncStatus('offline', 'Offline — tap dot to retry');
-    document.getElementById('sync-dot').onclick = () => { document.getElementById('sync-dot').onclick=null; fetchRemote(); };
+    document.getElementById('sync-dot').onclick = () => {
+      document.getElementById('sync-dot').onclick = null;
+      fetchRemote();
+    };
   }
-  render();  // re-render to show cousin's latest
+  render();
 }
 
-// ── SAVE MY DAY TO GOOGLE SHEET ───────────────────────────────────────────────
+// ── SAVE MY DAY TO SHEET ──────────────────────────────────────────────────────
 async function saveDay() {
   if (isSyncing) return;
   isSyncing = true;
@@ -415,42 +415,36 @@ async function saveDay() {
   lbl.innerHTML = '<div class="spinner"></div>';
 
   const key = `${MNUMS[curMonth]}-${curDay}`;
-  if (!myData[key]) myData[key] = {};
+  if (!localData[key]) localData[key] = {};
+  if (!myTicks[key])   myTicks[key]   = {};
 
-  // Collect weight if Sunday — save under my slot key
+  // Collect weight on Sundays
   const dow = new Date(2026, MNUMS[curMonth]-1, curDay).getDay();
   if (dow === 0) {
     const wtKey = 'wt' + mySlot().replace('_','');
-    myData[key].wt = document.getElementById(wtKey).value || '';
+    const wtVal = document.getElementById(wtKey).value || '';
+    localData[key][wtKey] = wtVal;
   }
 
-  // Persist locally first — so even if network fails, my data is safe
-  persistMyData();
-
-  // Build the full day object to send: take what's on the sheet + overlay my slot
-  const existing = remoteData[key] || {};
-  const toSend   = Object.assign({}, existing);
-  ACTIVITIES.forEach(a => {
-    const v = myData[key][a.id];
-    if (v !== undefined) toSend[a.id + mySlot()] = v;
+  // Make sure localData has all my ticks with proper slot keys
+  Object.keys(myTicks[key]).forEach(actId => {
+    localData[key][actId + mySlot()] = myTicks[key][actId];
   });
-  if (myData[key].wt !== undefined) toSend['wt' + mySlot().replace('_','')] = myData[key].wt;
+
+  persistAll();
 
   try {
-    const res = await fetch(cfg.script, {
+    const res  = await fetch(cfg.script, {
       method: 'POST',
-      body: JSON.stringify({ action:'set', sheet: cfg.sheet, key, data: toSend })
+      body: JSON.stringify({ action:'set', sheet: cfg.sheet, key, data: localData[key] })
     });
     const json = await res.json();
     if (json.ok) {
-      // Update remote cache so we don't lose cousin's data
-      remoteData[key] = toSend;
-      localStorage.setItem('dart_remote', JSON.stringify(remoteData));
       showToast('Saved ✓');
       setSyncStatus('ok', 'Saved just now');
     } else throw new Error();
   } catch(e) {
-    showToast('Saved on your phone. Will sync when online.');
+    showToast('Saved on phone. Will sync when online.');
   }
 
   isSyncing = false;
@@ -485,7 +479,7 @@ function renderCalendar() {
   for (let d=1; d<=total; d++) {
     const dow = (firstDOW+d-1)%7;
     const key = `${MNUMS[curMonth]}-${d}`;
-    const dd  = merged(key);
+    const dd  = localData[key] || {};
     let s1=0,s2=0,t=0;
     ACTIVITIES.forEach(a => {
       if(dd[a.id+'_1']){t++;if(dd[a.id+'_1']==='done')s1++;}
@@ -496,15 +490,14 @@ function renderCalendar() {
       <div class="pip" style="background:${s2>0?'var(--blue)':'var(--border)'}"></div>
     </div>` : '';
     html += `<div class="cal-cell${dow===0?' sun':''}${(isThisMonth&&d===today.getDate())?' today':''}${d===curDay?' selected':''}" onclick="setDay(${d})">
-      <div class="cd">${DNAMES[dow]}</div>
-      <div class="cn">${d}</div>${pips}</div>`;
+      <div class="cd">${DNAMES[dow]}</div><div class="cn">${d}</div>${pips}</div>`;
   }
   el.innerHTML = html;
 }
 
 function renderActivities() {
   const key = `${MNUMS[curMonth]}-${curDay}`;
-  const dd  = merged(key);
+  const dd  = localData[key] || {};
   const dow = new Date(2026, MNUMS[curMonth]-1, curDay).getDay();
   document.getElementById('day-heading').textContent = `${DNAMES[dow]}, ${MFULL[curMonth]} ${curDay}`;
   document.getElementById('weight-section').style.display = dow===0 ? 'block' : 'none';
@@ -522,11 +515,15 @@ function renderActivities() {
     const i2 = v2==='done'?'✓':v2==='skip'?'✗':'';
     const s1 = (v1==='done'||v1==='skip')?'color:#fff':'color:var(--muted)';
     const s2 = (v2==='done'||v2==='skip')?'color:#fff':'color:var(--muted)';
+    // Only my column is tappable; cousin's column shows their data read-only
+    const myIsOne = mySlot()==='_1';
+    const tap1 = myIsOne ? `onclick="toggle('${a.id}',event)"` : `style="${s1};cursor:default"`;
+    const tap2 = !myIsOne ? `onclick="toggle('${a.id}',event)"` : `style="${s2};cursor:default"`;
     return `<div class="act-row">
       <span class="act-emoji">${a.emoji}</span>
       <span class="act-name">${a.name}</span>
-      <div class="act-toggle ${c1}" style="${s1}" onclick="toggle('${a.id}',event)">${i1}</div>
-      <div class="act-toggle ${c2}" style="${s2};cursor:default">${i2}</div>
+      <div class="act-toggle ${c1}" style="${s1}" ${tap1}>${i1}</div>
+      <div class="act-toggle ${c2}" style="${s2}" ${tap2}>${i2}</div>
     </div>`;
   }).join('');
 }
@@ -535,7 +532,7 @@ function renderScores() {
   const total = MDAYS[curMonth];
   let d1=0,t1=0,d2=0,t2=0;
   for (let d=1;d<=total;d++) {
-    const dd = merged(`${MNUMS[curMonth]}-${d}`);
+    const dd = localData[`${MNUMS[curMonth]}-${d}`] || {};
     ACTIVITIES.forEach(a => {
       if(dd[a.id+'_1']){t1++;if(dd[a.id+'_1']==='done')d1++;}
       if(dd[a.id+'_2']){t2++;if(dd[a.id+'_2']==='done')d2++;}
@@ -545,14 +542,17 @@ function renderScores() {
   document.getElementById('pct2').textContent = t2 ? Math.round(d2/t2*100)+'%' : '–';
 }
 
-// ── TOGGLE (only your column) ─────────────────────────────────────────────────
+// ── TOGGLE — only updates my slot ─────────────────────────────────────────────
 function toggle(id, e) {
   e.stopPropagation();
   const key = `${MNUMS[curMonth]}-${curDay}`;
-  if (!myData[key]) myData[key] = {};
-  const cur = myData[key][id] || '';
-  myData[key][id] = cur==='' ? 'done' : cur==='done' ? 'skip' : '';
-  persistMyData();   // save immediately to localStorage
+  if (!localData[key]) localData[key] = {};
+  if (!myTicks[key])   myTicks[key]   = {};
+  const cur = myTicks[key][id] || '';
+  const next = cur==='' ? 'done' : cur==='done' ? 'skip' : '';
+  myTicks[key][id]                = next;
+  localData[key][id + mySlot()]   = next;
+  persistAll();
   renderActivities();
   renderCalendar();
   renderScores();
@@ -560,7 +560,7 @@ function toggle(id, e) {
 
 function setMonth(i) {
   curMonth = i;
-  curDay = (MNUMS[i]-1 === new Date().getMonth() && new Date().getFullYear()===2026) ? new Date().getDate() : 1;
+  curDay = (MNUMS[i]-1===new Date().getMonth()&&new Date().getFullYear()===2026) ? new Date().getDate() : 1;
   renderMonthTabs();
   render();
 }
@@ -576,12 +576,10 @@ function closeSettings() { document.getElementById('settings-modal').classList.r
 function updateSettings() {
   cfg.script = document.getElementById('s-script').value.trim();
   localStorage.setItem('dart_cfg', JSON.stringify(cfg));
-  closeSettings();
-  showToast('Settings saved');
-  fetchRemote();
+  closeSettings(); showToast('Settings saved'); fetchRemote();
 }
 function resetApp() {
-  if (confirm('This will clear your config. Your data stays in Google Sheets. Continue?')) {
+  if (confirm('This clears your config from this phone. Your data stays in Google Sheets. Continue?')) {
     localStorage.removeItem('dart_cfg');
     location.reload();
   }
@@ -589,18 +587,17 @@ function resetApp() {
 
 // ── UTILS ─────────────────────────────────────────────────────────────────────
 function setSyncStatus(state, text) {
-  document.getElementById('sync-dot').className = 'sync-dot' + (state==='ok'?'':' '+state);
+  document.getElementById('sync-dot').className = 'sync-dot'+(state==='ok'?'':' '+state);
   document.getElementById('sync-text').textContent = text;
 }
 function showToast(msg, isError=false) {
   const t = document.getElementById('toast');
   t.textContent = msg;
   t.className = 'toast'+(isError?' error':'')+' show';
-  setTimeout(() => t.className='toast'+(isError?' error':''), 2800);
+  setTimeout(()=>t.className='toast'+(isError?' error':''), 2800);
 }
 
 // ── START ──────────────────────────────────────────────────────────────────────
 if (loadConfig()) initApp();
-</script>
 </body>
 </html>
