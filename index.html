@@ -174,6 +174,7 @@
     <div class="sync-dot" id="sync-dot"></div>
     <div class="sync-text" id="sync-text">Connected</div>
   </div>
+  <div id="debug-box" style="margin:4px 1rem;padding:8px;background:#fff3cd;border-radius:8px;font-size:11px;font-family:monospace;white-space:pre-wrap;word-break:break-all;display:block"></div>
 
   <div class="month-tabs" id="month-tabs"></div>
 
@@ -373,16 +374,32 @@ async function fetchRemote() {
   try {
     const url  = `${cfg.script}?action=get&sheet=${encodeURIComponent(cfg.sheet)}&t=${Date.now()}`;
     const res  = await fetch(url);
-    const json = await res.json();
+    const text = await res.text();
+
+    // Show raw fetch result in debug panel
+    const dbg = document.getElementById('debug-box');
+    if (dbg) dbg.textContent = 'RAW: ' + text.substring(0, 400);
+
+    let json;
+    try { json = JSON.parse(text); } catch(e) {
+      if (dbg) dbg.textContent = 'JSON PARSE ERROR: ' + text.substring(0,200);
+      setSyncStatus('offline', 'Bad response from script');
+      return;
+    }
 
     if (json.data) {
-      // Merge sheet data in — but protect my own ticks
       const sheetData = json.data;
+      if (dbg) dbg.textContent = 'KEYS: ' + Object.keys(sheetData).join(', ') + '\nSAMPLE: ' + JSON.stringify(Object.values(sheetData)[0] || {}).substring(0,200);
+
       Object.keys(sheetData).forEach(key => {
-        // Start with what the sheet has (has both slots)
         if (!localData[key]) localData[key] = {};
-        Object.assign(localData[key], sheetData[key]);
-        // Now re-apply my own ticks on top — my ticks always win
+        // sheetData[key] might itself be a JSON string — parse if needed
+        let dayObj = sheetData[key];
+        if (typeof dayObj === 'string') {
+          try { dayObj = JSON.parse(dayObj); } catch(e) {}
+        }
+        Object.assign(localData[key], dayObj);
+        // Re-apply my own ticks on top
         if (myTicks[key]) {
           Object.keys(myTicks[key]).forEach(actId => {
             localData[key][actId + mySlot()] = myTicks[key][actId];
@@ -390,12 +407,16 @@ async function fetchRemote() {
         }
       });
       persistAll();
+    } else {
+      if (dbg) dbg.textContent = 'NO json.data — got: ' + JSON.stringify(json).substring(0,200);
     }
 
     const now = new Date();
     setSyncStatus('ok', `Synced ${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`);
   } catch(e) {
     setSyncStatus('offline', 'Offline — tap dot to retry');
+    const dbg = document.getElementById('debug-box');
+    if (dbg) dbg.textContent = 'FETCH ERROR: ' + e.toString();
     document.getElementById('sync-dot').onclick = () => {
       document.getElementById('sync-dot').onclick = null;
       fetchRemote();
