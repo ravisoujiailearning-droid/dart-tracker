@@ -167,14 +167,16 @@
       <div class="brand">DART 2026</div>
       <div class="month-title" id="month-title">April</div>
     </div>
-    <button class="settings-btn" onclick="openSettings()">⚙️</button>
+    <div style="display:flex;gap:8px">
+      <button class="settings-btn" onclick="openReport()" title="Monthly Report">📊</button>
+      <button class="settings-btn" onclick="openSettings()">⚙️</button>
+    </div>
   </div>
 
   <div class="sync-bar">
     <div class="sync-dot" id="sync-dot"></div>
     <div class="sync-text" id="sync-text">Connected</div>
   </div>
-  <div id="debug-box" style="margin:4px 1rem;padding:8px;background:#fff3cd;border-radius:8px;font-size:11px;font-family:monospace;white-space:pre-wrap;word-break:break-all;display:block"></div>
 
   <div class="month-tabs" id="month-tabs"></div>
 
@@ -253,6 +255,19 @@
     </div>
     <div class="modal-btns">
       <button class="btn-danger" onclick="resetApp()">Switch User / Reconfigure</button>
+    </div>
+  </div>
+</div>
+
+<!-- REPORT MODAL -->
+<div class="modal-bg" id="report-modal">
+  <div class="modal" style="border-radius:20px 20px 0 0;padding:0;max-height:90vh;overflow-y:auto">
+    <div style="padding:1.25rem 1.5rem 0;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--card);z-index:1;border-bottom:0.5px solid var(--border)">
+      <h3 style="font-size:17px;font-weight:700">Monthly Report</h3>
+      <button onclick="closeReport()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted)">✕</button>
+    </div>
+    <div style="padding:1rem 1.5rem 2rem">
+      <div id="report-content"></div>
     </div>
   </div>
 </div>
@@ -551,18 +566,31 @@ function renderActivities() {
   }).join('');
 }
 
-function renderScores() {
-  const total = MDAYS[curMonth];
-  let d1=0,t1=0,d2=0,t2=0;
-  for (let d=1;d<=total;d++) {
-    const dd = localData[`${MNUMS[curMonth]}-${d}`] || {};
+function calcMonthScore(monthIdx) {
+  const total = MDAYS[monthIdx];
+  const today = new Date();
+  const isCurrentMonth = (MNUMS[monthIdx]-1 === today.getMonth() && today.getFullYear() === 2026);
+  const daysToCount = isCurrentMonth ? today.getDate() : total;
+  const denominator = daysToCount * ACTIVITIES.length;
+  let d1=0, d2=0;
+  for (let d=1; d<=daysToCount; d++) {
+    const dd = localData[`${MNUMS[monthIdx]}-${d}`] || {};
     ACTIVITIES.forEach(a => {
-      if(dd[a.id+'_1']){t1++;if(dd[a.id+'_1']==='done')d1++;}
-      if(dd[a.id+'_2']){t2++;if(dd[a.id+'_2']==='done')d2++;}
+      if (dd[a.id+'_1']==='done') d1++;
+      if (dd[a.id+'_2']==='done') d2++;
     });
   }
-  document.getElementById('pct1').textContent = t1 ? Math.round(d1/t1*100)+'%' : '–';
-  document.getElementById('pct2').textContent = t2 ? Math.round(d2/t2*100)+'%' : '–';
+  return {
+    s: denominator > 0 ? Math.round(d1/denominator*100) : null,
+    r: denominator > 0 ? Math.round(d2/denominator*100) : null,
+    days: daysToCount
+  };
+}
+
+function renderScores() {
+  const sc = calcMonthScore(curMonth);
+  document.getElementById('pct1').textContent = sc.s !== null ? sc.s+'%' : '–';
+  document.getElementById('pct2').textContent = sc.r !== null ? sc.r+'%' : '–';
 }
 
 // ── TOGGLE — only updates my slot ─────────────────────────────────────────────
@@ -608,7 +636,94 @@ function resetApp() {
   }
 }
 
-// ── UTILS ─────────────────────────────────────────────────────────────────────
+// ── REPORT ────────────────────────────────────────────────────────────────────
+function openReport() {
+  renderReport();
+  document.getElementById('report-modal').classList.add('open');
+}
+function closeReport() {
+  document.getElementById('report-modal').classList.remove('open');
+}
+
+function renderReport() {
+  const el = document.getElementById('report-content');
+  const scores = MONTHS.map((m, i) => ({ m, i, ...calcMonthScore(i) })).filter(s => s.s !== null || s.r !== null);
+
+  if (scores.length === 0) {
+    el.innerHTML = '<p style="color:var(--muted);text-align:center;padding:2rem">No data yet</p>';
+    return;
+  }
+
+  const maxVal = 100;
+
+  // Per-activity breakdown for current month
+  const actBreakdown = ACTIVITIES.map(a => {
+    const total = MDAYS[curMonth];
+    const today = new Date();
+    const isCurrentMonth = (MNUMS[curMonth]-1 === today.getMonth() && today.getFullYear() === 2026);
+    const days = isCurrentMonth ? today.getDate() : total;
+    let d1=0, d2=0;
+    for (let d=1; d<=days; d++) {
+      const dd = localData[`${MNUMS[curMonth]}-${d}`] || {};
+      if (dd[a.id+'_1']==='done') d1++;
+      if (dd[a.id+'_2']==='done') d2++;
+    }
+    return { ...a, s: Math.round(d1/days*100), r: Math.round(d2/days*100) };
+  });
+
+  el.innerHTML = `
+    <p style="font-size:12px;color:var(--muted);margin-bottom:1rem;text-transform:uppercase;letter-spacing:0.8px;font-weight:600">All months — % of days done</p>
+
+    ${scores.map(sc => `
+      <div style="margin-bottom:1rem">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+          <span style="font-size:13px;font-weight:600;color:var(--text)">${sc.m}</span>
+          <span style="font-size:11px;color:var(--muted)">${sc.days} days</span>
+        </div>
+        <div style="margin-bottom:5px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+            <span style="font-size:11px;color:var(--green);font-weight:600;width:14px">S</span>
+            <div style="flex:1;height:14px;background:var(--light);border-radius:7px;overflow:hidden">
+              <div style="width:${sc.s||0}%;height:100%;background:var(--green);border-radius:7px;transition:width 0.4s"></div>
+            </div>
+            <span style="font-size:12px;font-weight:600;color:var(--green);width:32px;text-align:right">${sc.s||0}%</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:11px;color:var(--blue);font-weight:600;width:14px">R</span>
+            <div style="flex:1;height:14px;background:var(--light);border-radius:7px;overflow:hidden">
+              <div style="width:${sc.r||0}%;height:100%;background:var(--blue);border-radius:7px;transition:width 0.4s"></div>
+            </div>
+            <span style="font-size:12px;font-weight:600;color:var(--blue);width:32px;text-align:right">${sc.r||0}%</span>
+          </div>
+        </div>
+      </div>
+    `).join('')}
+
+    <div style="border-top:0.5px solid var(--border);margin:1.25rem 0;padding-top:1.25rem">
+      <p style="font-size:12px;color:var(--muted);margin-bottom:1rem;text-transform:uppercase;letter-spacing:0.8px;font-weight:600">${MFULL[curMonth]} — activity breakdown</p>
+      ${actBreakdown.map(a => `
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span style="font-size:14px;width:20px">${a.emoji}</span>
+          <span style="font-size:12px;color:var(--text);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${a.name}</span>
+          <div style="display:flex;align-items:center;gap:4px">
+            <div style="width:48px;height:8px;background:var(--light);border-radius:4px;overflow:hidden">
+              <div style="width:${a.s}%;height:100%;background:var(--green);border-radius:4px"></div>
+            </div>
+            <span style="font-size:11px;color:var(--green);font-weight:600;width:28px;text-align:right">${a.s}%</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:4px">
+            <div style="width:48px;height:8px;background:var(--light);border-radius:4px;overflow:hidden">
+              <div style="width:${a.r}%;height:100%;background:var(--blue);border-radius:4px"></div>
+            </div>
+            <span style="font-size:11px;color:var(--blue);font-weight:600;width:28px;text-align:right">${a.r}%</span>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+
 function setSyncStatus(state, text) {
   document.getElementById('sync-dot').className = 'sync-dot'+(state==='ok'?'':' '+state);
   document.getElementById('sync-text').textContent = text;
