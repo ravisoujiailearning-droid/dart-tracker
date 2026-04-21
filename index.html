@@ -504,25 +504,28 @@ function renderActivities() {
     document.getElementById('wt1').value = dd.wt1 || '';
     document.getElementById('wt2').value = dd.wt2 || '';
   }
+  const iAmSlot1 = mySlot() === '_1';
   const el = document.getElementById('act-list');
   el.innerHTML = ACTIVITIES.map(a => {
     const v1 = dd[a.id+'_1'] || '';
     const v2 = dd[a.id+'_2'] || '';
-    const c1 = v1==='done'?'done-s':v1==='skip'?'skip-s':'';
-    const c2 = v2==='done'?'done-r':v2==='skip'?'skip-r':'';
-    const i1 = v1==='done'?'✓':v1==='skip'?'✗':'';
-    const i2 = v2==='done'?'✓':v2==='skip'?'✗':'';
-    const s1 = (v1==='done'||v1==='skip')?'color:#fff':'color:var(--muted)';
-    const s2 = (v2==='done'||v2==='skip')?'color:#fff':'color:var(--muted)';
-    // Only my column is tappable; cousin's column shows their data read-only
-    const myIsOne = mySlot()==='_1';
-    const tap1 = myIsOne ? `onclick="toggle('${a.id}',event)"` : `style="${s1};cursor:default"`;
-    const tap2 = !myIsOne ? `onclick="toggle('${a.id}',event)"` : `style="${s2};cursor:default"`;
+    const c1 = v1==='done' ? 'done-s' : v1==='skip' ? 'skip-s' : '';
+    const c2 = v2==='done' ? 'done-r' : v2==='skip' ? 'skip-r' : '';
+    const i1 = v1==='done' ? '✓' : v1==='skip' ? '✗' : '';
+    const i2 = v2==='done' ? '✓' : v2==='skip' ? '✗' : '';
+    const txtColor1 = (v1==='done'||v1==='skip') ? 'color:#fff' : 'color:var(--muted)';
+    const txtColor2 = (v2==='done'||v2==='skip') ? 'color:#fff' : 'color:var(--muted)';
+    // My column gets onclick, cousin's column is read-only (cursor:default)
+    const btn1 = iAmSlot1
+      ? `<div class="act-toggle ${c1}" style="${txtColor1}" onclick="toggle('${a.id}',event)">${i1}</div>`
+      : `<div class="act-toggle ${c1}" style="${txtColor1};cursor:default">${i1}</div>`;
+    const btn2 = !iAmSlot1
+      ? `<div class="act-toggle ${c2}" style="${txtColor2}" onclick="toggle('${a.id}',event)">${i2}</div>`
+      : `<div class="act-toggle ${c2}" style="${txtColor2};cursor:default">${i2}</div>`;
     return `<div class="act-row">
       <span class="act-emoji">${a.emoji}</span>
       <span class="act-name">${a.name}</span>
-      <div class="act-toggle ${c1}" style="${s1}" ${tap1}>${i1}</div>
-      <div class="act-toggle ${c2}" style="${s2}" ${tap2}>${i2}</div>
+      ${btn1}${btn2}
     </div>`;
   }).join('');
 }
