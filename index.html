@@ -637,7 +637,10 @@ function resetApp() {
 }
 
 // ── REPORT ────────────────────────────────────────────────────────────────────
+let expandedMonth = null;
+
 function openReport() {
+  expandedMonth = curMonth;
   renderReport();
   document.getElementById('report-modal').classList.add('open');
 }
@@ -645,84 +648,128 @@ function closeReport() {
   document.getElementById('report-modal').classList.remove('open');
 }
 
-function renderReport() {
-  const el = document.getElementById('report-content');
-  const scores = MONTHS.map((m, i) => ({ m, i, ...calcMonthScore(i) })).filter(s => s.s !== null || s.r !== null);
+function toggleMonthBreakdown(idx) {
+  expandedMonth = expandedMonth === idx ? null : idx;
+  renderReport();
+}
 
-  if (scores.length === 0) {
-    el.innerHTML = '<p style="color:var(--muted);text-align:center;padding:2rem">No data yet</p>';
-    return;
-  }
-
-  const maxVal = 100;
-
-  // Per-activity breakdown for current month
-  const actBreakdown = ACTIVITIES.map(a => {
-    const total = MDAYS[curMonth];
-    const today = new Date();
-    const isCurrentMonth = (MNUMS[curMonth]-1 === today.getMonth() && today.getFullYear() === 2026);
-    const days = isCurrentMonth ? today.getDate() : total;
+function calcActivityBreakdown(monthIdx) {
+  const today = new Date();
+  const isCurrentMonth = (MNUMS[monthIdx]-1 === today.getMonth() && today.getFullYear() === 2026);
+  const days = isCurrentMonth ? today.getDate() : MDAYS[monthIdx];
+  return ACTIVITIES.map(a => {
     let d1=0, d2=0;
     for (let d=1; d<=days; d++) {
-      const dd = localData[`${MNUMS[curMonth]}-${d}`] || {};
+      const dd = localData[`${MNUMS[monthIdx]}-${d}`] || {};
       if (dd[a.id+'_1']==='done') d1++;
       if (dd[a.id+'_2']==='done') d2++;
     }
     return { ...a, s: Math.round(d1/days*100), r: Math.round(d2/days*100) };
   });
+}
+
+function ringPath(pct, r, cx, cy) {
+  const circ = 2 * Math.PI * r;
+  return `stroke-dasharray="${(pct/100*circ).toFixed(1)} ${circ.toFixed(1)}"`;
+}
+
+function renderReport() {
+  const el = document.getElementById('report-content');
+  const scores = MONTHS.map((m, i) => ({ m, full: MFULL[i], i, ...calcMonthScore(i) }))
+    .filter(s => s.s !== null || s.r !== null);
+
+  if (scores.length === 0) {
+    el.innerHTML = '<p style="color:var(--muted);text-align:center;padding:3rem 1rem">No data yet.<br>Start tracking to see your report!</p>';
+    return;
+  }
+
+  // Overall averages
+  const avgS = scores.length ? Math.round(scores.reduce((a,s)=>a+(s.s||0),0)/scores.length) : 0;
+  const avgR = scores.length ? Math.round(scores.reduce((a,s)=>a+(s.r||0),0)/scores.length) : 0;
+
+  const r = 28, circ = 2*Math.PI*r;
 
   el.innerHTML = `
-    <p style="font-size:12px;color:var(--muted);margin-bottom:1rem;text-transform:uppercase;letter-spacing:0.8px;font-weight:600">All months — % of days done</p>
-
-    ${scores.map(sc => `
-      <div style="margin-bottom:1rem">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-          <span style="font-size:13px;font-weight:600;color:var(--text)">${sc.m}</span>
-          <span style="font-size:11px;color:var(--muted)">${sc.days} days</span>
-        </div>
-        <div style="margin-bottom:5px">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-            <span style="font-size:11px;color:var(--green);font-weight:600;width:14px">S</span>
-            <div style="flex:1;height:14px;background:var(--light);border-radius:7px;overflow:hidden">
-              <div style="width:${sc.s||0}%;height:100%;background:var(--green);border-radius:7px;transition:width 0.4s"></div>
-            </div>
-            <span style="font-size:12px;font-weight:600;color:var(--green);width:32px;text-align:right">${sc.s||0}%</span>
-          </div>
-          <div style="display:flex;align-items:center;gap:8px">
-            <span style="font-size:11px;color:var(--blue);font-weight:600;width:14px">R</span>
-            <div style="flex:1;height:14px;background:var(--light);border-radius:7px;overflow:hidden">
-              <div style="width:${sc.r||0}%;height:100%;background:var(--blue);border-radius:7px;transition:width 0.4s"></div>
-            </div>
-            <span style="font-size:12px;font-weight:600;color:var(--blue);width:32px;text-align:right">${sc.r||0}%</span>
-          </div>
-        </div>
-      </div>
-    `).join('')}
-
-    <div style="border-top:0.5px solid var(--border);margin:1.25rem 0;padding-top:1.25rem">
-      <p style="font-size:12px;color:var(--muted);margin-bottom:1rem;text-transform:uppercase;letter-spacing:0.8px;font-weight:600">${MFULL[curMonth]} — activity breakdown</p>
-      ${actBreakdown.map(a => `
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-          <span style="font-size:14px;width:20px">${a.emoji}</span>
-          <span style="font-size:12px;color:var(--text);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${a.name}</span>
-          <div style="display:flex;align-items:center;gap:4px">
-            <div style="width:48px;height:8px;background:var(--light);border-radius:4px;overflow:hidden">
-              <div style="width:${a.s}%;height:100%;background:var(--green);border-radius:4px"></div>
-            </div>
-            <span style="font-size:11px;color:var(--green);font-weight:600;width:28px;text-align:right">${a.s}%</span>
-          </div>
-          <div style="display:flex;align-items:center;gap:4px">
-            <div style="width:48px;height:8px;background:var(--light);border-radius:4px;overflow:hidden">
-              <div style="width:${a.r}%;height:100%;background:var(--blue);border-radius:4px"></div>
-            </div>
-            <span style="font-size:11px;color:var(--blue);font-weight:600;width:28px;text-align:right">${a.r}%</span>
-          </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:1.5rem">
+      ${[{name:'Soujanya',avg:avgS,color:'var(--green)',colorDark:'#0F6E56'},{name:'Ravi',avg:avgR,color:'var(--blue)',colorDark:'#185FA5'}].map(p=>`
+        <div style="background:var(--card);border:0.5px solid var(--border);border-radius:16px;padding:14px 10px;text-align:center">
+          <svg width="72" height="72" viewBox="0 0 72 72" style="display:block;margin:0 auto 6px">
+            <circle cx="36" cy="36" r="${r}" fill="none" stroke="var(--light)" stroke-width="6"/>
+            <circle cx="36" cy="36" r="${r}" fill="none" stroke="${p.color}" stroke-width="6"
+              stroke-dasharray="${(p.avg/100*circ).toFixed(1)} ${circ.toFixed(1)}"
+              stroke-linecap="round" transform="rotate(-90 36 36)"/>
+            <text x="36" y="40" text-anchor="middle" font-size="16" font-weight="700" fill="${p.color}">${p.avg}%</text>
+          </svg>
+          <div style="font-size:13px;font-weight:700;color:var(--text)">${p.name}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:1px">Overall avg</div>
         </div>
       `).join('')}
     </div>
+
+    <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px">Monthly breakdown</div>
+
+    ${scores.map(sc => {
+      const isOpen = expandedMonth === sc.i;
+      const breakdown = isOpen ? calcActivityBreakdown(sc.i) : [];
+      return `
+        <div style="background:var(--card);border:0.5px solid ${isOpen?'var(--text)':'var(--border)'};border-radius:16px;margin-bottom:10px;overflow:hidden;transition:all 0.2s">
+          <div onclick="toggleMonthBreakdown(${sc.i})" style="padding:14px 16px;cursor:pointer;display:flex;align-items:center;gap:12px;-webkit-tap-highlight-color:transparent">
+            <div style="flex:1">
+              <div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:6px">${sc.full}
+                <span style="font-size:11px;font-weight:400;color:var(--muted);margin-left:6px">${sc.days} days</span>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:5px">
+                <div style="display:flex;align-items:center;gap:8px">
+                  <span style="font-size:11px;font-weight:700;color:var(--green);width:12px">S</span>
+                  <div style="flex:1;height:10px;background:var(--light);border-radius:5px;overflow:hidden">
+                    <div style="width:${sc.s||0}%;height:100%;background:var(--green);border-radius:5px"></div>
+                  </div>
+                  <span style="font-size:12px;font-weight:700;color:var(--green);width:30px;text-align:right">${sc.s||0}%</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <span style="font-size:11px;font-weight:700;color:var(--blue);width:12px">R</span>
+                  <div style="flex:1;height:10px;background:var(--light);border-radius:5px;overflow:hidden">
+                    <div style="width:${sc.r||0}%;height:100%;background:var(--blue);border-radius:5px"></div>
+                  </div>
+                  <span style="font-size:12px;font-weight:700;color:var(--blue);width:30px;text-align:right">${sc.r||0}%</span>
+                </div>
+              </div>
+            </div>
+            <span style="font-size:18px;color:var(--muted);transition:transform 0.2s;transform:rotate(${isOpen?'90':'0'}deg)">›</span>
+          </div>
+
+          ${isOpen ? `
+            <div style="border-top:0.5px solid var(--border);padding:12px 16px">
+              <div style="display:grid;grid-template-columns:24px 1fr 68px 68px;align-items:center;gap:4px;margin-bottom:8px">
+                <div></div><div></div>
+                <div style="text-align:center;font-size:10px;font-weight:700;color:var(--green)">SOUJANYA</div>
+                <div style="text-align:center;font-size:10px;font-weight:700;color:var(--blue)">RAVI</div>
+              </div>
+              ${breakdown.map(a => `
+                <div style="display:grid;grid-template-columns:24px 1fr 68px 68px;align-items:center;gap:4px;margin-bottom:10px">
+                  <span style="font-size:14px">${a.emoji}</span>
+                  <span style="font-size:12px;color:var(--text);font-weight:500">${a.name}</span>
+                  <div>
+                    <div style="height:6px;background:var(--light);border-radius:3px;overflow:hidden;margin-bottom:2px">
+                      <div style="width:${a.s}%;height:100%;background:var(--green);border-radius:3px"></div>
+                    </div>
+                    <div style="text-align:center;font-size:10px;font-weight:700;color:var(--green)">${a.s}%</div>
+                  </div>
+                  <div>
+                    <div style="height:6px;background:var(--light);border-radius:3px;overflow:hidden;margin-bottom:2px">
+                      <div style="width:${a.r}%;height:100%;background:var(--blue);border-radius:3px"></div>
+                    </div>
+                    <div style="text-align:center;font-size:10px;font-weight:700;color:var(--blue)">${a.r}%</div>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          ` : ''}
+        </div>
+      `;
+    }).join('')}
   `;
 }
-
 
 function setSyncStatus(state, text) {
   document.getElementById('sync-dot').className = 'sync-dot'+(state==='ok'?'':' '+state);
